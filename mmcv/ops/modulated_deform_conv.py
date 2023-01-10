@@ -139,14 +139,14 @@ class ModulatedDeformConv2dFunction(Function):
             ModulatedDeformConv2dFunction._output_size(ctx, input, weight))
         ctx._bufs = [input.new_empty(0), input.new_empty(0)]
         ext_module.modulated_deform_conv_forward(
-            input,
-            weight,
-            bias,
-            ctx._bufs[0],
-            offset,
-            mask,
-            output,
-            ctx._bufs[1],
+            input.cpu(),
+            weight.cpu(),
+            bias.cpu(),
+            ctx._bufs[0].cpu(),
+            offset.cpu(),
+            mask.cpu(),
+            output.cpu(),
+            ctx._bufs[1].cpu(),
             kernel_h=weight.size(2),
             kernel_w=weight.size(3),
             stride_h=ctx.stride[0],
@@ -158,7 +158,7 @@ class ModulatedDeformConv2dFunction(Function):
             group=ctx.groups,
             deformable_group=ctx.deform_groups,
             with_bias=ctx.with_bias)
-        return output
+        return output.to('mlu')
 
     @staticmethod
     @once_differentiable
@@ -174,19 +174,19 @@ class ModulatedDeformConv2dFunction(Function):
         grad_bias = torch.zeros_like(bias)
         grad_output = grad_output.contiguous()
         ext_module.modulated_deform_conv_backward(
-            input,
-            weight,
-            bias,
-            ctx._bufs[0],
-            offset,
-            mask,
-            ctx._bufs[1],
-            grad_input,
-            grad_weight,
-            grad_bias,
-            grad_offset,
-            grad_mask,
-            grad_output,
+            input.cpu(),
+            weight.cpu(),
+            bias.cpu(),
+            ctx._bufs[0].cpu(),
+            offset.cpu(),
+            mask.cpu(),
+            ctx._bufs[1].cpu(),
+            grad_input.cpu(),
+            grad_weight.cpu(),
+            grad_bias.cpu(),
+            grad_offset.cpu(),
+            grad_mask.cpu(),
+            grad_output.cpu(),
             kernel_h=weight.size(2),
             kernel_w=weight.size(3),
             stride_h=ctx.stride[0],
@@ -201,7 +201,7 @@ class ModulatedDeformConv2dFunction(Function):
         if not ctx.with_bias:
             grad_bias = None
 
-        return (grad_input, grad_offset, grad_mask, grad_weight, grad_bias,
+        return (grad_input.to('mlu'), grad_offset.to('mlu'), grad_mask.to('mlu'), grad_weight.to('mlu'), grad_bias,
                 None, None, None, None, None)
 
     @staticmethod
@@ -354,86 +354,86 @@ class ModulatedDeformConv2dPack(ModulatedDeformConv2d):
                                       error_msgs)
 
 
-if IS_MLU_AVAILABLE:
-    from torchvision.ops import deform_conv2d as tv_deform_conv2d
-
-    @CONV_LAYERS.register_module('DCNv2', force=True)
-    class ModulatedDeformConv2dPack_MLU(nn.modules.Module):
-        """This class is the DCNv2 implementation of the MLU device. The MLU
-        backend support of the operator has been implemented in torchvision.
-        The mmcv registration mechanism is used for multiplexing here. The
-        torchvision implementation of DCNv2 is called.
-
-        Args:
-            in_channels (int): Same as nn.Conv2d.
-            out_channels (int): Same as nn.Conv2d.
-            kernel_size (int or tuple[int]): Same as nn.Conv2d.
-            stride (int): Same as nn.Conv2d, while tuple is not supported.
-            padding (int): Same as nn.Conv2d, while tuple is not supported.
-            dilation (int): Same as nn.Conv2d, while tuple is not supported.
-            groups (int): Same as nn.Conv2d.
-            bias (bool or str): If specified as `auto`, it will be decided by
-                the norm_cfg. Bias will be set as True if norm_cfg is None,
-                otherwise False.
-        """
-
-        def __init__(self,
-                     in_channels: int,
-                     out_channels: int,
-                     kernel_size: Union[int, Tuple[int]],
-                     stride: int = 1,
-                     padding: int = 0,
-                     dilation: int = 1,
-                     groups: int = 1,
-                     deform_groups: int = 1,
-                     bias: Union[bool, str] = True):
-            super().__init__()
-            self.in_channels = in_channels
-            self.out_channels = out_channels
-            self.kernel_size = _pair(kernel_size)
-            self.stride = _pair(stride)
-            self.padding = _pair(padding)
-            self.dilation = _pair(dilation)
-            self.groups = groups
-            self.deform_groups = deform_groups
-            self.weight = nn.Parameter(
-                torch.Tensor(out_channels, in_channels, *self.kernel_size))
-            if bias:
-                self.bias = nn.Parameter(torch.Tensor(out_channels))
-            else:
-                self.register_parameter('bias', None)
-            self.conv_offset = nn.Conv2d(
-                self.in_channels,
-                self.deform_groups * 3 * self.kernel_size[0] *
-                self.kernel_size[1],
-                kernel_size=self.kernel_size,
-                stride=self.stride,
-                padding=self.padding,
-                bias=True)
-            self.init_weights()
-
-        def init_weights(self):
-            n = self.in_channels
-            for k in self.kernel_size:
-                n *= k
-            stdv = 1. / math.sqrt(n)
-            self.weight.data.uniform_(-stdv, stdv)
-            if self.bias is not None:
-                self.bias.data.zero_()
-            self.conv_offset.weight.data.zero_()
-            self.conv_offset.bias.data.zero_()
-
-        def forward(self, x):
-            out = self.conv_offset(x)
-            o1, o2, mask = torch.chunk(out, 3, dim=1)
-            offset = torch.cat((o1, o2), dim=1)
-            mask = torch.sigmoid(mask)
-            return tv_deform_conv2d(
-                x,
-                offset,
-                self.weight,
-                bias=self.bias,
-                stride=self.stride,
-                padding=self.padding,
-                dilation=self.dilation,
-                mask=mask)
+#if IS_MLU_AVAILABLE:
+#    from torchvision.ops import deform_conv2d as tv_deform_conv2d
+#
+#    @CONV_LAYERS.register_module('DCNv2', force=True)
+#    class ModulatedDeformConv2dPack_MLU(nn.modules.Module):
+#        """This class is the DCNv2 implementation of the MLU device. The MLU
+#        backend support of the operator has been implemented in torchvision.
+#        The mmcv registration mechanism is used for multiplexing here. The
+#        torchvision implementation of DCNv2 is called.
+#
+#        Args:
+#            in_channels (int): Same as nn.Conv2d.
+#            out_channels (int): Same as nn.Conv2d.
+#            kernel_size (int or tuple[int]): Same as nn.Conv2d.
+#            stride (int): Same as nn.Conv2d, while tuple is not supported.
+#            padding (int): Same as nn.Conv2d, while tuple is not supported.
+#            dilation (int): Same as nn.Conv2d, while tuple is not supported.
+#            groups (int): Same as nn.Conv2d.
+#            bias (bool or str): If specified as `auto`, it will be decided by
+#                the norm_cfg. Bias will be set as True if norm_cfg is None,
+#                otherwise False.
+#        """
+#
+#        def __init__(self,
+#                     in_channels: int,
+#                     out_channels: int,
+#                     kernel_size: Union[int, Tuple[int]],
+#                     stride: int = 1,
+#                     padding: int = 0,
+#                     dilation: int = 1,
+#                     groups: int = 1,
+#                     deform_groups: int = 1,
+#                     bias: Union[bool, str] = True):
+#            super().__init__()
+#            self.in_channels = in_channels
+#            self.out_channels = out_channels
+#            self.kernel_size = _pair(kernel_size)
+#            self.stride = _pair(stride)
+#            self.padding = _pair(padding)
+#            self.dilation = _pair(dilation)
+#            self.groups = groups
+#            self.deform_groups = deform_groups
+#            self.weight = nn.Parameter(
+#                torch.Tensor(out_channels, in_channels, *self.kernel_size))
+#            if bias:
+#                self.bias = nn.Parameter(torch.Tensor(out_channels))
+#            else:
+#                self.register_parameter('bias', None)
+#            self.conv_offset = nn.Conv2d(
+#                self.in_channels,
+#                self.deform_groups * 3 * self.kernel_size[0] *
+#                self.kernel_size[1],
+#                kernel_size=self.kernel_size,
+#                stride=self.stride,
+#                padding=self.padding,
+#                bias=True)
+#            self.init_weights()
+#
+#        def init_weights(self):
+#            n = self.in_channels
+#            for k in self.kernel_size:
+#                n *= k
+#            stdv = 1. / math.sqrt(n)
+#            self.weight.data.uniform_(-stdv, stdv)
+#            if self.bias is not None:
+#                self.bias.data.zero_()
+#            self.conv_offset.weight.data.zero_()
+#            self.conv_offset.bias.data.zero_()
+#
+#        def forward(self, x):
+#            out = self.conv_offset(x)
+#            o1, o2, mask = torch.chunk(out, 3, dim=1)
+#            offset = torch.cat((o1, o2), dim=1)
+#            mask = torch.sigmoid(mask)
+#            return tv_deform_conv2d(
+#                x,
+#                offset,
+#                self.weight,
+#                bias=self.bias,
+#                stride=self.stride,
+#                padding=self.padding,
+#                dilation=self.dilation,
+#                mask=mask)

@@ -108,7 +108,7 @@ __all__ = [
     'PrRoIPool', 'prroi_pool'
 ]
 
-if IS_MLU_AVAILABLE:
-    from .modulated_deform_conv import \
-        ModulatedDeformConv2dPack_MLU  # noqa:F401
-    __all__.append('ModulatedDeformConv2dPack_MLU')
+#if IS_MLU_AVAILABLE:
+#    from .modulated_deform_conv import \
+#        ModulatedDeformConv2dPack_MLU  # noqa:F401
+#    __all__.append('ModulatedDeformConv2dPack_MLU')
